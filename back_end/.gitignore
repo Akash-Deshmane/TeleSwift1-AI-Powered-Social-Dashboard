@@ -1,0 +1,5 @@
+node_modules/
+.env
+sessions/
+database.sqlite
+serviceAccountKey.json
