@@ -27,20 +27,11 @@ It solves the problem of information overload in highly active messaging groups 
 
 ## 🏗️ System Architecture
 
-```mermaid
-graph TD
-    A[React Frontend] -->|REST API| B(Node.js / Express Backend)
-    
-    subgraph Backend Core
-    B -->|GramJS / MTProto| C[Telegram Servers]
-    B -->|Gemini AI SDK| D[Google Gemini API]
-    B -->|Firebase Admin SDK| E[(Firestore Database)]
-    end
-    
-    C -.->|Live Chats & Auth| B
-    D -.->|AI Summaries| B
-    E -.->|User Quotas & History| B
-```
+- **React Frontend:** Handles the UI and makes REST API calls to the backend.
+- **Node.js / Express Backend (Core):**
+  - Uses your **Telegram API Keys** (APP_API_ID & APP_API_HASH) via GramJS to securely connect directly to Telegram servers for real-time chats and password-less authentication.
+  - Connects to the **Google Gemini API SDK** to process chat payloads and generate AI summaries.
+  - Connects to the **Firebase Admin SDK** to persist user quotas and save history in a Firestore Database.
 
 ## 📂 Project Structure
 
