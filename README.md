@@ -25,6 +25,23 @@ It solves the problem of information overload in highly active messaging groups 
 - **Quick Reply:** Send messages directly to Telegram groups from the TeleSwift dashboard.
 - **Summary History:** Save and bookmark important AI-generated summaries to your personal Firebase-backed cloud.
 
+## 🏗️ System Architecture
+
+```mermaid
+graph TD
+    A[React Frontend] -->|REST API| B(Node.js / Express Backend)
+    
+    subgraph Backend Core
+    B -->|GramJS / MTProto| C[Telegram Servers]
+    B -->|@google/generative-ai| D[Google Gemini API]
+    B -->|Firebase Admin SDK| E[(Firestore Database)]
+    end
+    
+    C -.->|Live Chats & Auth| B
+    D -.->|AI Summaries| B
+    E -.->|User Quotas & History| B
+```
+
 ## 📂 Project Structure
 
 ```text
