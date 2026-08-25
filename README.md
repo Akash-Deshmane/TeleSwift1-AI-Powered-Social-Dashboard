@@ -33,7 +33,7 @@ graph TD
     
     subgraph Backend Core
     B -->|GramJS / MTProto| C[Telegram Servers]
-    B -->|@google/generative-ai| D[Google Gemini API]
+    B -->|Gemini AI SDK| D[Google Gemini API]
     B -->|Firebase Admin SDK| E[(Firestore Database)]
     end
     
