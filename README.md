@@ -25,6 +25,28 @@ It solves the problem of information overload in highly active messaging groups 
 - **Quick Reply:** Send messages directly to Telegram groups from the TeleSwift dashboard.
 - **Summary History:** Save and bookmark important AI-generated summaries to your personal Firebase-backed cloud.
 
+## 📂 Project Structure
+
+```text
+TeleSwift/
+├── back_end/                # Node.js backend
+│   ├── index.js             # Express server entry point
+│   ├── routes/              # Express API routes
+│   │   ├── authRoutes.js    # Telegram OTP and Session caching logic
+│   │   └── mainRoutes.js    # Gemini AI summarization & message routing
+│   ├── utils/               # Helper modules
+│   │   ├── db.js            # Firebase Admin SDK logic
+│   │   └── telegramClient.js# MTProto Telegram Client setup
+│   └── sessions/            # Local cached MTProto sessions (Git-ignored)
+└── front_end_web/           # React.js frontend
+    ├── src/
+    │   ├── pages/           # React page components (Login, Feed, Profile, etc.)
+    │   ├── components/      # Reusable UI components (Sidebar Layout)
+    │   ├── App.jsx          # React Router setup
+    │   └── config.js        # Global frontend configuration
+    └── vite.config.js       # Vite bundler configuration
+```
+
 ## 🛠️ Setup Instructions
 
 ### 1. Prerequisites
