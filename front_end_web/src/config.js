@@ -1,4 +1,3 @@
 export const Config = {
-  // Assuming the node backend is still on port 8000
-  apiBaseUrl: "http://localhost:8000"
+  apiBaseUrl: import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"
 };
