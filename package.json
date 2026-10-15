@@ -1,0 +1,8 @@
+{
+  "name": "teleswift",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "cd front_end_web && npm install && npm run build"
+  }
+}
