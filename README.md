@@ -13,9 +13,9 @@ It solves the problem of information overload in highly active messaging groups 
 
 ### Backend (Server & API)
 - **Node.js & Express** - Scalable backend architecture
+- **MongoDB & Mongoose** - Document database for persisting AI summaries, user state, and usage quotas
 - **Telegram MTProto API (GramJS)** - Native password-less Telegram OTP authentication and real-time messaging
 - **Google Generative AI SDK (Gemini Flash)** - Real-time chat summarization engine
-- **Firebase Firestore (Admin SDK)** - Cloud database for persisting AI summaries and user usage quotas
 - **Node-Cache** - In-memory caching layer to optimize API performance and prevent Telegram rate-limits
 
 ## 💡 Key Features
@@ -23,15 +23,15 @@ It solves the problem of information overload in highly active messaging groups 
 - **Live Feed Dashboard:** View all your active Telegram groups, channels, and direct messages in a sleek web UI.
 - **On-Demand AI Summaries:** Instantly summarize hundreds of missed messages in a group using Gemini AI.
 - **Quick Reply:** Send messages directly to Telegram groups from the TeleSwift dashboard.
-- **Summary History:** Save and bookmark important AI-generated summaries to your personal Firebase-backed cloud.
+- **Summary History:** Save and bookmark important AI-generated summaries to your personal MongoDB database.
 
 ## 🏗️ System Architecture
 
 - **React Frontend:** Handles the UI and makes REST API calls to the backend.
 - **Node.js / Express Backend (Core):**
-  - Uses your **Telegram API Keys** (APP_API_ID & APP_API_HASH) via GramJS to securely connect directly to Telegram servers for real-time chats and password-less authentication.
+  - Uses your **Telegram API Keys** (`APP_API_ID` & `APP_API_HASH`) via GramJS to securely connect directly to Telegram servers for real-time chats and password-less authentication.
   - Connects to the **Google Gemini API SDK** to process chat payloads and generate AI summaries.
-  - Connects to the **Firebase Admin SDK** to persist user quotas and save history in a Firestore Database.
+  - Connects to **MongoDB** via Mongoose to persist user quotas and save history.
 
 ## 📂 Project Structure
 
@@ -43,7 +43,7 @@ TeleSwift/
 │   │   ├── authRoutes.js    # Telegram OTP and Session caching logic
 │   │   └── mainRoutes.js    # Gemini AI summarization & message routing
 │   ├── utils/               # Helper modules
-│   │   ├── db.js            # Firebase Admin SDK logic
+│   │   ├── db.js            # MongoDB & Mongoose schemas and queries
 │   │   └── telegramClient.js# MTProto Telegram Client setup
 │   └── sessions/            # Local cached MTProto sessions (Git-ignored)
 └── front_end_web/           # React.js frontend
@@ -59,9 +59,9 @@ TeleSwift/
 
 ### 1. Prerequisites
 - Node.js (v18+)
+- MongoDB (Local instance or MongoDB Atlas cluster)
 - A Telegram API ID and Hash (from my.telegram.org)
 - Google Gemini API Key (from Google AI Studio)
-- Firebase Service Account Key
 
 ### 2. Backend Setup
 ```bash
@@ -73,8 +73,11 @@ Create a `.env` file in the `back_end` directory:
 APP_API_ID=your_telegram_api_id
 APP_API_HASH=your_telegram_api_hash
 GEMINI_API_KEY=your_gemini_api_key
+MONGODB_URI=mongodb://127.0.0.1:27017/teleswift
 ```
-Place your Firebase `serviceAccountKey.json` inside the `back_end` folder. Then start the server:
+*(For MongoDB Atlas, set `MONGODB_URI=mongodb+srv://<username>:<password>@cluster0.mongodb.net/teleswift`)*
+
+Then start the server:
 ```bash
 node index.js
 ```
