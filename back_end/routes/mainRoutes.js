@@ -4,9 +4,19 @@ const { fetchUserInfo, fetchDialogs, fetchMessages } = require('../utils/telegra
 const { getUser, useLimit, saveSummary, getSummaries, getAnalytics } = require('../utils/db');
 
 const router = express.Router();
-const cache = new NodeCache({ stdTTL: 300 }); // 5 minutes cache
+const cache = new NodeCache({ stdTTL: 180 }); // 3 minutes cache
 
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+
+function handleRouteError(res, error) {
+    const msg = error.message || "An error occurred";
+    const isAuthError = msg.includes("Session") || 
+                        msg.includes("unauthorized") || 
+                        msg.includes("AUTH_KEY_UNREGISTERED") || 
+                        msg.includes("SESSION_REVOKED") || 
+                        msg.includes("SESSION_EXPIRED");
+    return res.status(isAuthError ? 401 : 400).json({ detail: msg });
+}
 
 async function generateSummary(text) {
     if (!process.env.GEMINI_API_KEY) {
@@ -14,7 +24,6 @@ async function generateSummary(text) {
     }
     try {
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        // Using dynamic latest model pointers instead of hardcoded 1.5 versions
         const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
         
         const prompt = "Summarize this chat concisely, highlighting the main topics and any action items:\n\n" + text;
@@ -22,7 +31,6 @@ async function generateSummary(text) {
         const response = await result.response;
         return response.text();
     } catch (e) {
-        // Fallback to pro if flash isn't available
         try {
             const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
             const model = genAI.getGenerativeModel({ model: "gemini-pro-latest" });
@@ -48,13 +56,16 @@ router.get('/profile/:phone', async (req, res) => {
             usage_count: dbUser.usage_count
         });
     } catch (error) {
-        res.status(400).json({ detail: error.message });
+        handleRouteError(res, error);
     }
 });
 
 router.get('/dialogs/:phone', async (req, res) => {
     try {
         const { phone } = req.params;
+        if (!phone || phone === 'null' || phone === 'undefined') {
+            return res.status(401).json({ detail: "No phone number provided. Please log in." });
+        }
         
         const cacheKey = `dialogs_${phone}`;
         const cached = cache.get(cacheKey);
@@ -65,7 +76,7 @@ router.get('/dialogs/:phone', async (req, res) => {
         
         res.json(dialogs);
     } catch (error) {
-        res.status(400).json({ detail: error.message });
+        handleRouteError(res, error);
     }
 });
 
@@ -94,7 +105,7 @@ router.post('/summarize/:phone', async (req, res) => {
 
         res.json({ summary, originalLength: fullText.length });
     } catch (error) {
-        res.status(400).json({ detail: error.message });
+        handleRouteError(res, error);
     }
 });
 
@@ -110,7 +121,7 @@ router.post('/save-summary/:phone', async (req, res) => {
         await saveSummary(phone, chatName, originalLength || summaryText.length, summaryText);
         res.json({ message: "Summary saved successfully" });
     } catch (error) {
-        res.status(400).json({ detail: error.message });
+        handleRouteError(res, error);
     }
 });
 
@@ -128,7 +139,7 @@ router.post('/send-message/:phone', async (req, res) => {
         
         res.json({ message: "Message sent successfully" });
     } catch (error) {
-        res.status(400).json({ detail: error.message });
+        handleRouteError(res, error);
     }
 });
 
@@ -138,7 +149,7 @@ router.get('/history/:phone', async (req, res) => {
         const summaries = await getSummaries(phone);
         res.json(summaries);
     } catch (error) {
-        res.status(400).json({ detail: error.message });
+        handleRouteError(res, error);
     }
 });
 
@@ -148,7 +159,7 @@ router.get('/analytics/:phone', async (req, res) => {
         const analytics = await getAnalytics(phone);
         res.json(analytics);
     } catch (error) {
-        res.status(400).json({ detail: error.message });
+        handleRouteError(res, error);
     }
 });
 

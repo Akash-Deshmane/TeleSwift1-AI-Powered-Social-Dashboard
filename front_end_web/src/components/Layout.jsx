@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, Navigate } from 'react-router-dom';
 import { Home, Bookmark, BarChart2, User, LogOut } from 'lucide-react';
 import axios from 'axios';
 import { Config } from '../config';
@@ -8,6 +8,11 @@ export default function Layout() {
   const navigate = useNavigate();
   const phone = localStorage.getItem('phone_stored');
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  // If no phone is stored, redirect to login page immediately
+  if (!phone) {
+    return <Navigate to="/login" replace />;
+  }
 
   const handleLogout = async () => {
     setIsLoggingOut(true);

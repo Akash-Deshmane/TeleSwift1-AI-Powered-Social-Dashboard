@@ -1,18 +1,18 @@
 import { useState } from 'react';
-import { useNavigate, Navigate } from 'react-router-dom';
+import { useNavigate, Navigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { Config } from '../config';
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [phone, setPhone] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(location.state?.message || '');
 
-  // If user is already logged in (has phone in storage), redirect to profile.
-  // Real app might need a /check_session call here, but we let Profile handle it.
+  // If user is already logged in, redirect to Feed
   if (localStorage.getItem('phone_stored')) {
-    return <Navigate to="/profile" replace />;
+    return <Navigate to="/feed" replace />;
   }
 
   const handleSendOtp = async (e) => {
@@ -59,7 +59,7 @@ export default function Login() {
               style={{ flex: 1, background: 'transparent', border: 'none', padding: '16px', color: 'white', fontSize: '1.1rem', outline: 'none' }}
             />
           </div>
-          {error && <span className="error-text">{error}</span>}
+          {error && <span className="error-text" style={{ marginTop: '8px', display: 'block' }}>{error}</span>}
         </div>
 
         <button type="submit" className="btn-primary" disabled={isLoading}>

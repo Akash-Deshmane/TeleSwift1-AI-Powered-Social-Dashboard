@@ -1,25 +1,36 @@
 import { useState, useEffect } from 'react';
+import { Navigate, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Config } from '../config';
 
 export default function History() {
+  const navigate = useNavigate();
   const phone = localStorage.getItem('phone_stored');
   const [history, setHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  if (!phone) {
+    return <Navigate to="/login" replace />;
+  }
 
   useEffect(() => {
     const fetchHistory = async () => {
       try {
         const res = await axios.get(`${Config.apiBaseUrl}/teleswift/history/${phone}`);
-        setHistory(res.data);
+        setHistory(res.data || []);
       } catch (err) {
-        console.error("Failed to load history.");
+        if (err.response?.status === 401) {
+          localStorage.removeItem('phone_stored');
+          navigate('/login', { replace: true });
+        } else {
+          console.error("Failed to load history.");
+        }
       } finally {
         setIsLoading(false);
       }
     };
     fetchHistory();
-  }, [phone]);
+  }, [phone, navigate]);
 
   if (isLoading) return <div style={{ padding: '40px' }}>Loading history...</div>;
 

@@ -6,10 +6,11 @@ import Feed from './pages/Feed';
 import History from './pages/History';
 import Analytics from './pages/Analytics';
 import Layout from './components/Layout';
-
 import Register from './pages/Register';
 
 function App() {
+  const phone = localStorage.getItem('phone_stored');
+
   return (
     <Router>
       <Routes>
@@ -25,7 +26,8 @@ function App() {
           <Route path="/profile" element={<Profile />} />
         </Route>
 
-        <Route path="*" element={<Navigate to="/feed" replace />} />
+        <Route path="/" element={<Navigate to={phone ? "/feed" : "/login"} replace />} />
+        <Route path="*" element={<Navigate to={phone ? "/feed" : "/login"} replace />} />
       </Routes>
     </Router>
   );

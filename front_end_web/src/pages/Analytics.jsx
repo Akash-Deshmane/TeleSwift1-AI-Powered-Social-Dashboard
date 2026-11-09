@@ -1,26 +1,37 @@
 import { useState, useEffect } from 'react';
+import { Navigate, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Config } from '../config';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 export default function Analytics() {
+  const navigate = useNavigate();
   const phone = localStorage.getItem('phone_stored');
   const [data, setData] = useState({ totalSummaries: 0, topChats: [] });
   const [isLoading, setIsLoading] = useState(true);
+
+  if (!phone) {
+    return <Navigate to="/login" replace />;
+  }
 
   useEffect(() => {
     const fetchAnalytics = async () => {
       try {
         const res = await axios.get(`${Config.apiBaseUrl}/teleswift/analytics/${phone}`);
-        setData(res.data);
+        setData(res.data || { totalSummaries: 0, topChats: [] });
       } catch (err) {
-        console.error("Failed to load analytics");
+        if (err.response?.status === 401) {
+          localStorage.removeItem('phone_stored');
+          navigate('/login', { replace: true });
+        } else {
+          console.error("Failed to load analytics");
+        }
       } finally {
         setIsLoading(false);
       }
     };
     fetchAnalytics();
-  }, [phone]);
+  }, [phone, navigate]);
 
   if (isLoading) return <div style={{ padding: '40px' }}>Loading analytics...</div>;
 
@@ -42,7 +53,7 @@ export default function Analytics() {
 
       <div className="card">
         <h2 style={{ fontSize: '1.2rem', marginBottom: '24px' }}>Most Summarized Chats</h2>
-        {data.topChats.length === 0 ? (
+        {(!data.topChats || data.topChats.length === 0) ? (
           <p style={{ color: 'var(--text-muted)' }}>No data yet.</p>
         ) : (
           <div style={{ height: '300px', width: '100%' }}>
