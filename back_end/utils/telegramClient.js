@@ -1,7 +1,8 @@
 const { TelegramClient, Api } = require("telegram");
-const { StoreSession } = require("telegram/sessions");
+const { StoreSession, StringSession } = require("telegram/sessions");
 const path = require("path");
 const fs = require("fs");
+const { getUserSession, saveUserSession, clearUserSession } = require("./db");
 
 const SESSIONS_DIR = path.join(__dirname, '..', 'sessions');
 
@@ -17,18 +18,21 @@ const getSessionPath = (phone) => {
     return path.relative(process.cwd(), fullPath).replace(/\\/g, '/');
 };
 
-function clearSession(phone) {
+async function clearSession(phone) {
     try {
-        const absDir = getAbsoluteSessionDir(phone);
-        if (fs.existsSync(absDir)) {
-            fs.rmSync(absDir, { recursive: true, force: true });
+        await clearUserSession(phone);
+        if (!process.env.VERCEL) {
+            const absDir = getAbsoluteSessionDir(phone);
+            if (fs.existsSync(absDir)) {
+                fs.rmSync(absDir, { recursive: true, force: true });
+            }
         }
     } catch (e) {
         console.error("Error clearing session:", e.message);
     }
 }
 
-// Store in-memory instances and phoneCodeHash needed for sign in
+// In-memory instances and phoneCodeHash needed for sign in
 const authSessions = new Map();
 
 async function startAuth(phone) {
@@ -38,14 +42,9 @@ async function startAuth(phone) {
     if (isNaN(apiId) || !apiHash) {
         throw new Error("Telegram API ID and Hash not configured");
     }
-    const sessionDir = getAbsoluteSessionDir(phone);
-    if (!fs.existsSync(sessionDir)) {
-        fs.mkdirSync(sessionDir, { recursive: true });
-    }
 
-    const sessionRel = getSessionPath(phone);
-    const storeSession = new StoreSession(sessionRel);
-    const client = new TelegramClient(storeSession, apiId, apiHash, { connectionRetries: 5 });
+    const stringSession = new StringSession("");
+    const client = new TelegramClient(stringSession, apiId, apiHash, { connectionRetries: 5 });
     
     await client.connect();
 
@@ -76,58 +75,64 @@ async function verifyCode(phone, code) {
                 phoneCode: code
             })
         );
+        const sessionString = client.session.save();
+        await saveUserSession(phone, sessionString);
     } finally {
         await client.disconnect();
         authSessions.delete(phone);
     }
 }
 
-async function checkSession(phone) {
+async function getClient(phone) {
     const apiId = parseInt(process.env.APP_API_ID);
     const apiHash = process.env.APP_API_HASH;
-
-    const absDir = getAbsoluteSessionDir(phone);
-    if (!fs.existsSync(absDir)) {
-        return false;
+    
+    if (isNaN(apiId) || !apiHash) {
+        throw new Error("Telegram API ID and Hash not configured");
     }
 
-    const sessionRel = getSessionPath(phone);
-    const storeSession = new StoreSession(sessionRel);
-    const client = new TelegramClient(storeSession, apiId, apiHash, { connectionRetries: 1 });
-    
+    // 1. Check MongoDB session string
+    const sessionString = await getUserSession(phone);
+    if (sessionString) {
+        const session = new StringSession(sessionString);
+        return new TelegramClient(session, apiId, apiHash, { connectionRetries: 3 });
+    }
+
+    // 2. Fallback to disk if running locally
+    if (!process.env.VERCEL) {
+        const absDir = getAbsoluteSessionDir(phone);
+        if (fs.existsSync(absDir)) {
+            const storeSession = new StoreSession(getSessionPath(phone));
+            return new TelegramClient(storeSession, apiId, apiHash, { connectionRetries: 3 });
+        }
+    }
+
+    throw new Error("Session not found. Please log in again.");
+}
+
+async function checkSession(phone) {
     try {
+        const client = await getClient(phone);
         await client.connect();
         const isAuth = await client.isUserAuthorized();
         await client.disconnect();
         if (!isAuth) {
-            clearSession(phone);
+            await clearSession(phone);
         }
         return isAuth;
     } catch (e) {
-        clearSession(phone);
         return false;
     }
 }
 
 async function fetchUserInfo(phone) {
-    const apiId = parseInt(process.env.APP_API_ID);
-    const apiHash = process.env.APP_API_HASH;
-
-    const absDir = getAbsoluteSessionDir(phone);
-    if (!fs.existsSync(absDir)) {
-        throw new Error("Session not found. Please log in again.");
-    }
-
-    const sessionRel = getSessionPath(phone);
-    const storeSession = new StoreSession(sessionRel);
-    const client = new TelegramClient(storeSession, apiId, apiHash, { connectionRetries: 3 });
-    
+    const client = await getClient(phone);
     await client.connect();
 
     try {
         const isAuth = await client.isUserAuthorized();
         if (!isAuth) {
-            clearSession(phone);
+            await clearSession(phone);
             throw new Error("Session expired or unauthorized. Please log in again.");
         }
 
@@ -153,7 +158,7 @@ async function fetchUserInfo(phone) {
         };
     } catch (e) {
         if (e.message && (e.message.includes("AUTH_KEY_UNREGISTERED") || e.message.includes("SESSION_REVOKED") || e.message.includes("SESSION_EXPIRED"))) {
-            clearSession(phone);
+            await clearSession(phone);
             throw new Error("Session expired or unauthorized. Please log in again.");
         }
         throw e;
@@ -163,48 +168,28 @@ async function fetchUserInfo(phone) {
 }
 
 async function logout(phone) {
-    const apiId = parseInt(process.env.APP_API_ID);
-    const apiHash = process.env.APP_API_HASH;
-
-    const absDir = getAbsoluteSessionDir(phone);
-    if (!fs.existsSync(absDir)) {
-        return;
-    }
-
-    const sessionRel = getSessionPath(phone);
-    const storeSession = new StoreSession(sessionRel);
-    const client = new TelegramClient(storeSession, apiId, apiHash, { connectionRetries: 3 });
-    
     try {
+        const client = await getClient(phone);
         await client.connect();
         if (await client.isUserAuthorized()) {
             await client.invoke(new Api.auth.LogOut());
         }
+        await client.disconnect();
     } catch (e) {
         console.warn("Logout warning:", e.message);
     } finally {
-        await client.disconnect();
-        clearSession(phone);
+        await clearSession(phone);
     }
 }
 
 async function fetchDialogs(phone) {
-    const apiId = parseInt(process.env.APP_API_ID);
-    const apiHash = process.env.APP_API_HASH;
-    const absDir = getAbsoluteSessionDir(phone);
-    if (!fs.existsSync(absDir)) {
-        throw new Error("Session not found. Please log in again.");
-    }
-    
-    const sessionRel = getSessionPath(phone);
-    const storeSession = new StoreSession(sessionRel);
-    const client = new TelegramClient(storeSession, apiId, apiHash, { connectionRetries: 3 });
+    const client = await getClient(phone);
     await client.connect();
     
     try {
         const isAuth = await client.isUserAuthorized();
         if (!isAuth) {
-            clearSession(phone);
+            await clearSession(phone);
             throw new Error("Session expired or unauthorized. Please log in again.");
         }
         
@@ -219,7 +204,7 @@ async function fetchDialogs(phone) {
         }));
     } catch (e) {
         if (e.message && (e.message.includes("AUTH_KEY_UNREGISTERED") || e.message.includes("SESSION_REVOKED") || e.message.includes("SESSION_EXPIRED"))) {
-            clearSession(phone);
+            await clearSession(phone);
             throw new Error("Session expired or unauthorized. Please log in again.");
         }
         throw e;
@@ -229,22 +214,13 @@ async function fetchDialogs(phone) {
 }
 
 async function fetchMessages(phone, chatId, limit = 50) {
-    const apiId = parseInt(process.env.APP_API_ID);
-    const apiHash = process.env.APP_API_HASH;
-    const absDir = getAbsoluteSessionDir(phone);
-    if (!fs.existsSync(absDir)) {
-        throw new Error("Session not found. Please log in again.");
-    }
-    
-    const sessionRel = getSessionPath(phone);
-    const storeSession = new StoreSession(sessionRel);
-    const client = new TelegramClient(storeSession, apiId, apiHash, { connectionRetries: 3 });
+    const client = await getClient(phone);
     await client.connect();
     
     try {
         const isAuth = await client.isUserAuthorized();
         if (!isAuth) {
-            clearSession(phone);
+            await clearSession(phone);
             throw new Error("Session expired or unauthorized. Please log in again.");
         }
         
@@ -257,7 +233,7 @@ async function fetchMessages(phone, chatId, limit = 50) {
         })).filter(m => m.text);
     } catch (e) {
         if (e.message && (e.message.includes("AUTH_KEY_UNREGISTERED") || e.message.includes("SESSION_REVOKED") || e.message.includes("SESSION_EXPIRED"))) {
-            clearSession(phone);
+            await clearSession(phone);
             throw new Error("Session expired or unauthorized. Please log in again.");
         }
         throw e;
@@ -267,28 +243,19 @@ async function fetchMessages(phone, chatId, limit = 50) {
 }
 
 async function sendMessage(phone, chatId, messageText) {
-    const apiId = parseInt(process.env.APP_API_ID);
-    const apiHash = process.env.APP_API_HASH;
-    const absDir = getAbsoluteSessionDir(phone);
-    if (!fs.existsSync(absDir)) {
-        throw new Error("Session not found. Please log in again.");
-    }
-    
-    const sessionRel = getSessionPath(phone);
-    const storeSession = new StoreSession(sessionRel);
-    const client = new TelegramClient(storeSession, apiId, apiHash, { connectionRetries: 3 });
+    const client = await getClient(phone);
     await client.connect();
     
     try {
         const isAuth = await client.isUserAuthorized();
         if (!isAuth) {
-            clearSession(phone);
+            await clearSession(phone);
             throw new Error("Session expired or unauthorized. Please log in again.");
         }
         await client.sendMessage(chatId, { message: messageText });
     } catch (e) {
         if (e.message && (e.message.includes("AUTH_KEY_UNREGISTERED") || e.message.includes("SESSION_REVOKED") || e.message.includes("SESSION_EXPIRED"))) {
-            clearSession(phone);
+            await clearSession(phone);
             throw new Error("Session expired or unauthorized. Please log in again.");
         }
         throw e;

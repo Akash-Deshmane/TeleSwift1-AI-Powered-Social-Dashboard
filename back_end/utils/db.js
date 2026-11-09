@@ -7,6 +7,7 @@ const userSchema = new mongoose.Schema({
     phone: { type: String, required: true, unique: true, index: true },
     email: { type: String, default: '' },
     username: { type: String, default: '' },
+    telegram_session: { type: String, default: '' },
     subscription_tier: { type: String, default: 'FREE' },
     usage_count: { type: Number, default: 5 },
     last_reset: { type: String },
@@ -36,6 +37,10 @@ const mockUser = (phone) => ({
 });
 
 async function initDb() {
+    if (isConnected && mongoose.connection.readyState === 1) {
+        return;
+    }
+
     const mongoUri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/teleswift';
     try {
         await mongoose.connect(mongoUri, {
@@ -96,6 +101,42 @@ async function updateUserRegistration(phone, { email, username }) {
         );
     } catch (error) {
         console.error("Error in updateUserRegistration:", error.message);
+    }
+}
+
+async function getUserSession(phone) {
+    if (!isConnected) return '';
+    try {
+        const user = await User.findOne({ phone }).lean();
+        return user?.telegram_session || '';
+    } catch (error) {
+        console.error("Error in getUserSession:", error.message);
+        return '';
+    }
+}
+
+async function saveUserSession(phone, sessionString) {
+    if (!isConnected) return;
+    try {
+        await User.findOneAndUpdate(
+            { phone },
+            { $set: { telegram_session: sessionString } },
+            { upsert: true, new: true }
+        );
+    } catch (error) {
+        console.error("Error in saveUserSession:", error.message);
+    }
+}
+
+async function clearUserSession(phone) {
+    if (!isConnected) return;
+    try {
+        await User.findOneAndUpdate(
+            { phone },
+            { $set: { telegram_session: '' } }
+        );
+    } catch (error) {
+        console.error("Error in clearUserSession:", error.message);
     }
 }
 
@@ -187,6 +228,9 @@ module.exports = {
     initDb,
     getUser,
     updateUserRegistration,
+    getUserSession,
+    saveUserSession,
+    clearUserSession,
     useLimit,
     saveSummary,
     getSummaries,

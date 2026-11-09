@@ -16,8 +16,13 @@ app.use(express.json());
 app.use('/auth', authRoutes);
 app.use('/teleswift', mainRoutes);
 
-initDb().then(() => {
-    app.listen(PORT, '0.0.0.0', () => {
-        console.log(`Server is running on port ${PORT}`);
-    });
-}).catch(console.error);
+// Only listen on port if run standalone / directly (not when imported or on Vercel)
+if (require.main === module && !process.env.VERCEL) {
+    initDb().then(() => {
+        app.listen(PORT, '0.0.0.0', () => {
+            console.log(`Server is running on port ${PORT}`);
+        });
+    }).catch(console.error);
+}
+
+module.exports = app;

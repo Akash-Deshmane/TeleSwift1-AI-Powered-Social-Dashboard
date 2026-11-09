@@ -4,5 +4,15 @@
   "private": true,
   "scripts": {
     "build": "cd front_end_web && npm install && npm run build"
+  },
+  "dependencies": {
+    "@google/genai": "^2.16.0",
+    "@google/generative-ai": "^0.24.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "mongoose": "^9.11.4",
+    "node-cache": "^5.1.2",
+    "telegram": "^2.26.22"
   }
 }
