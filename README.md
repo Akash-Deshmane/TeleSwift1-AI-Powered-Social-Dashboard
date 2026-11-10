@@ -1,4 +1,4 @@
-# Teleswift - AI Summarization Application ✨
+# TeleSwift ✨
 
 TeleSwift is a full-stack, AI-powered social dashboard that allows users to manage their live Telegram dialogs from a unified web interface. 
 
