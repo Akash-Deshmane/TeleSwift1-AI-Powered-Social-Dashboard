@@ -2,7 +2,31 @@ const { TelegramClient, Api } = require("telegram");
 const { StoreSession, StringSession } = require("telegram/sessions");
 const path = require("path");
 const fs = require("fs");
-const { getUserSession, saveUserSession, clearUserSession } = require("./db");
+const {
+    getUserSession,
+    saveUserSession,
+    clearUserSession,
+    savePendingAuth,
+    getPendingAuth,
+    clearPendingAuth
+} = require("./db");
+
+function getTelegramConfig() {
+    const rawId = (process.env.APP_API_ID || process.env.TELEGRAM_API_ID || "").replace(/['"\s]/g, "");
+    const rawHash = (process.env.APP_API_HASH || process.env.TELEGRAM_API_HASH || "").replace(/['"\s]/g, "");
+    const apiId = parseInt(rawId, 10);
+    const apiHash = rawHash;
+
+    if (isNaN(apiId) || !apiHash) {
+        const missing = [];
+        if (!rawId) missing.push("APP_API_ID is missing");
+        else if (isNaN(apiId)) missing.push("APP_API_ID is not a valid number");
+        if (!apiHash) missing.push("APP_API_HASH is missing");
+        throw new Error(`Telegram API configuration error (${missing.join(", ")}). Check Vercel Environment Variables (Production) and redeploy.`);
+    }
+
+    return { apiId, apiHash };
+}
 
 const SESSIONS_DIR = path.join(__dirname, '..', 'sessions');
 
@@ -36,12 +60,7 @@ async function clearSession(phone) {
 const authSessions = new Map();
 
 async function startAuth(phone) {
-    const apiId = parseInt(process.env.APP_API_ID);
-    const apiHash = process.env.APP_API_HASH;
-    
-    if (isNaN(apiId) || !apiHash) {
-        throw new Error("Telegram API ID and Hash not configured");
-    }
+    const { apiId, apiHash } = getTelegramConfig();
 
     const stringSession = new StringSession("");
     const client = new TelegramClient(stringSession, apiId, apiHash, { connectionRetries: 5 });
@@ -56,16 +75,32 @@ async function startAuth(phone) {
         phone
     );
 
+    const pendingSessionStr = client.session.save();
+    await savePendingAuth(phone, pendingSessionStr, result.phoneCodeHash);
     authSessions.set(phone, { client, phoneCodeHash: result.phoneCodeHash });
 }
 
 async function verifyCode(phone, code) {
-    const sessionData = authSessions.get(phone);
-    if (!sessionData) {
-        throw new Error("No auth session found for this phone. Please request an OTP first.");
-    }
+    let sessionData = authSessions.get(phone);
+    let client;
+    let phoneCodeHash;
 
-    const { client, phoneCodeHash } = sessionData;
+    if (sessionData) {
+        client = sessionData.client;
+        phoneCodeHash = sessionData.phoneCodeHash;
+        if (!client.connected) {
+            await client.connect();
+        }
+    } else {
+        const pending = await getPendingAuth(phone);
+        if (!pending) {
+            throw new Error("No auth session found for this phone. Please request an OTP first.");
+        }
+        const { apiId, apiHash } = getTelegramConfig();
+        client = new TelegramClient(new StringSession(pending.pendingSession), apiId, apiHash, { connectionRetries: 5 });
+        await client.connect();
+        phoneCodeHash = pending.phoneCodeHash;
+    }
 
     try {
         await client.invoke(
@@ -77,6 +112,7 @@ async function verifyCode(phone, code) {
         );
         const sessionString = client.session.save();
         await saveUserSession(phone, sessionString);
+        await clearPendingAuth(phone);
     } finally {
         await client.disconnect();
         authSessions.delete(phone);
@@ -84,12 +120,7 @@ async function verifyCode(phone, code) {
 }
 
 async function getClient(phone) {
-    const apiId = parseInt(process.env.APP_API_ID);
-    const apiHash = process.env.APP_API_HASH;
-    
-    if (isNaN(apiId) || !apiHash) {
-        throw new Error("Telegram API ID and Hash not configured");
-    }
+    const { apiId, apiHash } = getTelegramConfig();
 
     // 1. Check MongoDB session string
     const sessionString = await getUserSession(phone);

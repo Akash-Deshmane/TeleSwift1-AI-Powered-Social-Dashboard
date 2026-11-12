@@ -8,6 +8,8 @@ const userSchema = new mongoose.Schema({
     email: { type: String, default: '' },
     username: { type: String, default: '' },
     telegram_session: { type: String, default: '' },
+    pending_auth_session: { type: String, default: '' },
+    pending_phone_code_hash: { type: String, default: '' },
     subscription_tier: { type: String, default: 'FREE' },
     usage_count: { type: Number, default: 5 },
     last_reset: { type: String },
@@ -140,6 +142,48 @@ async function clearUserSession(phone) {
     }
 }
 
+async function savePendingAuth(phone, pendingSession, phoneCodeHash) {
+    if (!isConnected) return;
+    try {
+        await User.findOneAndUpdate(
+            { phone },
+            { $set: { pending_auth_session: pendingSession, pending_phone_code_hash: phoneCodeHash } },
+            { upsert: true, new: true }
+        );
+    } catch (error) {
+        console.error("Error in savePendingAuth:", error.message);
+    }
+}
+
+async function getPendingAuth(phone) {
+    if (!isConnected) return null;
+    try {
+        const user = await User.findOne({ phone }).lean();
+        if (user?.pending_auth_session && user?.pending_phone_code_hash) {
+            return {
+                pendingSession: user.pending_auth_session,
+                phoneCodeHash: user.pending_phone_code_hash
+            };
+        }
+        return null;
+    } catch (error) {
+        console.error("Error in getPendingAuth:", error.message);
+        return null;
+    }
+}
+
+async function clearPendingAuth(phone) {
+    if (!isConnected) return;
+    try {
+        await User.findOneAndUpdate(
+            { phone },
+            { $set: { pending_auth_session: '', pending_phone_code_hash: '' } }
+        );
+    } catch (error) {
+        console.error("Error in clearPendingAuth:", error.message);
+    }
+}
+
 async function useLimit(phone) {
     const user = await getUser(phone);
     if (user.subscription_tier === 'FREE' && user.usage_count <= 0) {
@@ -231,6 +275,9 @@ module.exports = {
     getUserSession,
     saveUserSession,
     clearUserSession,
+    savePendingAuth,
+    getPendingAuth,
+    clearPendingAuth,
     useLimit,
     saveSummary,
     getSummaries,
