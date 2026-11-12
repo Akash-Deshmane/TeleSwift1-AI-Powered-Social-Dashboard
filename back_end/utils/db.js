@@ -2,6 +2,12 @@ const mongoose = require('mongoose');
 
 let isConnected = false;
 
+// In-memory fallback store if MongoDB URI is not configured in cloud environment
+const memorySessions = new Map();
+const memoryPendingAuth = new Map();
+const memoryUsers = new Map();
+const memorySummaries = [];
+
 // User Schema
 const userSchema = new mongoose.Schema({
     phone: { type: String, required: true, unique: true, index: true },
@@ -28,25 +34,35 @@ const summarySchema = new mongoose.Schema({
 const User = mongoose.models.User || mongoose.model('User', userSchema);
 const Summary = mongoose.models.Summary || mongoose.model('Summary', summarySchema);
 
-// Fallback user for development if MongoDB is not connected yet
-const mockUser = (phone) => ({
-    phone,
-    subscription_tier: 'FREE',
-    usage_count: 5,
-    last_reset: new Date().toISOString().split('T')[0],
-    first_name: "Local",
-    username: "Demo User"
-});
+const mockUser = (phone) => {
+    if (!memoryUsers.has(phone)) {
+        memoryUsers.set(phone, {
+            phone,
+            subscription_tier: 'FREE',
+            usage_count: 5,
+            last_reset: new Date().toISOString().split('T')[0],
+            first_name: "TeleSwift",
+            username: "Cloud User"
+        });
+    }
+    return memoryUsers.get(phone);
+};
 
 async function initDb() {
     if (isConnected && mongoose.connection.readyState === 1) {
         return;
     }
 
+    // In Vercel cloud without MONGODB_URI, skip trying localhost:27017 so requests never stall 5s
+    if (process.env.VERCEL && !process.env.MONGODB_URI) {
+        isConnected = false;
+        return;
+    }
+
     const mongoUri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/teleswift';
     try {
         await mongoose.connect(mongoUri, {
-            serverSelectionTimeoutMS: 5000
+            serverSelectionTimeoutMS: 4000
         });
         isConnected = true;
         console.log(`🍃 MongoDB connected successfully (${mongoUri.includes('@') ? 'Atlas' : mongoUri})`);
@@ -55,8 +71,7 @@ async function initDb() {
         console.warn("\n========================================================");
         console.warn("⚠️ MONGODB WARNING: Could not connect to MongoDB!");
         console.warn(`Reason: ${e.message}`);
-        console.warn("Ensure MongoDB is running or MONGODB_URI is set in .env.");
-        console.warn("The server will run in fallback mock mode.");
+        console.warn("Running in in-memory fallback mode.");
         console.warn("========================================================\n");
     }
 }
@@ -93,7 +108,12 @@ async function getUser(phone) {
 
 // Update user with custom registration data
 async function updateUserRegistration(phone, { email, username }) {
-    if (!isConnected) return;
+    if (!isConnected) {
+        const u = mockUser(phone);
+        u.email = email;
+        u.username = username;
+        return;
+    }
 
     try {
         await User.findOneAndUpdate(
@@ -107,17 +127,18 @@ async function updateUserRegistration(phone, { email, username }) {
 }
 
 async function getUserSession(phone) {
-    if (!isConnected) return '';
+    if (!isConnected) return memorySessions.get(phone) || '';
     try {
         const user = await User.findOne({ phone }).lean();
-        return user?.telegram_session || '';
+        return user?.telegram_session || memorySessions.get(phone) || '';
     } catch (error) {
         console.error("Error in getUserSession:", error.message);
-        return '';
+        return memorySessions.get(phone) || '';
     }
 }
 
 async function saveUserSession(phone, sessionString) {
+    memorySessions.set(phone, sessionString);
     if (!isConnected) return;
     try {
         await User.findOneAndUpdate(
@@ -131,6 +152,7 @@ async function saveUserSession(phone, sessionString) {
 }
 
 async function clearUserSession(phone) {
+    memorySessions.delete(phone);
     if (!isConnected) return;
     try {
         await User.findOneAndUpdate(
@@ -143,6 +165,7 @@ async function clearUserSession(phone) {
 }
 
 async function savePendingAuth(phone, pendingSession, phoneCodeHash) {
+    memoryPendingAuth.set(phone, { pendingSession, phoneCodeHash });
     if (!isConnected) return;
     try {
         await User.findOneAndUpdate(
@@ -156,7 +179,7 @@ async function savePendingAuth(phone, pendingSession, phoneCodeHash) {
 }
 
 async function getPendingAuth(phone) {
-    if (!isConnected) return null;
+    if (!isConnected) return memoryPendingAuth.get(phone) || null;
     try {
         const user = await User.findOne({ phone }).lean();
         if (user?.pending_auth_session && user?.pending_phone_code_hash) {
@@ -165,14 +188,15 @@ async function getPendingAuth(phone) {
                 phoneCodeHash: user.pending_phone_code_hash
             };
         }
-        return null;
+        return memoryPendingAuth.get(phone) || null;
     } catch (error) {
         console.error("Error in getPendingAuth:", error.message);
-        return null;
+        return memoryPendingAuth.get(phone) || null;
     }
 }
 
 async function clearPendingAuth(phone) {
+    memoryPendingAuth.delete(phone);
     if (!isConnected) return;
     try {
         await User.findOneAndUpdate(
@@ -190,7 +214,12 @@ async function useLimit(phone) {
         throw new Error("Daily summarization limit reached. Please upgrade to Pro.");
     }
 
-    if (!isConnected) return true;
+    if (!isConnected) {
+        if (user.subscription_tier === 'FREE') {
+            user.usage_count = Math.max(0, user.usage_count - 1);
+        }
+        return true;
+    }
 
     try {
         if (user.subscription_tier === 'FREE') {
@@ -203,7 +232,17 @@ async function useLimit(phone) {
 }
 
 async function saveSummary(phone, chatName, originalLength, summaryText) {
-    if (!isConnected) return;
+    if (!isConnected) {
+        memorySummaries.unshift({
+            id: String(Date.now()),
+            phone,
+            chat_name: chatName,
+            original_length: originalLength,
+            summary_text: summaryText,
+            created_at: new Date().toISOString()
+        });
+        return;
+    }
 
     try {
         await Summary.create({
@@ -219,7 +258,9 @@ async function saveSummary(phone, chatName, originalLength, summaryText) {
 }
 
 async function getSummaries(phone) {
-    if (!isConnected) return [];
+    if (!isConnected) {
+        return memorySummaries.filter(s => s.phone === phone);
+    }
 
     try {
         const summaries = await Summary.find({ phone })
@@ -241,7 +282,18 @@ async function getSummaries(phone) {
 }
 
 async function getAnalytics(phone) {
-    if (!isConnected) return { totalSummaries: 0, topChats: [] };
+    if (!isConnected) {
+        const userSummaries = memorySummaries.filter(s => s.phone === phone);
+        const chatCounts = {};
+        userSummaries.forEach(doc => {
+            chatCounts[doc.chat_name] = (chatCounts[doc.chat_name] || 0) + 1;
+        });
+        const topChats = Object.entries(chatCounts)
+            .map(([name, count]) => ({ chat_name: name, count }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 5);
+        return { totalSummaries: userSummaries.length, topChats };
+    }
 
     try {
         const summaries = await Summary.find({ phone }).lean();
